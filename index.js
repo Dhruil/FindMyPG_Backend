@@ -22,6 +22,7 @@ const updatePGRouter = require('./routes/updatePG');
 const updateRoomRouter = require('./routes/updateRoom');
 const deletePGRouter = require('./routes/deletePG');
 const updateOwnerRoutes =require('./routes/updateOwner');
+
 const app = express();
 const PORT = process.env.PORT || 5000;
 
