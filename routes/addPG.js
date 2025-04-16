@@ -1,27 +1,26 @@
 // routes/addPG.js
+require('dotenv').config();
 const express = require('express');
 const router = express.Router();
 const pool = require('../db');
 const multer = require('multer');
-const path = require('path');
-const fs = require('fs');
+const cloudinary = require('cloudinary').v2;
+const { CloudinaryStorage } = require('multer-storage-cloudinary');
 
-// Configure multer for file storage
-const uploadDir = 'uploads/pgImages/';
+// Configure Cloudinary
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET
+});
 
-// Create the upload directory if it doesn't exist
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir, { recursive: true });
-}
-
-// Configure multer storage
-const storage = multer.diskStorage({
-  destination: function(req, file, cb) {
-    cb(null, uploadDir);
-  },
-  filename: function(req, file, cb) {
-    const uniqueName = Date.now() + '_' + file.originalname;
-    cb(null, uniqueName);
+// Configure CloudinaryStorage for PG images
+const storage = new CloudinaryStorage({
+  cloudinary: cloudinary,
+  params: {
+    folder: 'findmypg/pgImages',
+    allowed_formats: ['jpg', 'jpeg', 'png', 'gif'],
+    transformation: [{ width: 1000, crop: 'limit' }] // Optimize images
   }
 });
 
@@ -31,12 +30,15 @@ const upload = multer({
   fileFilter: function(req, file, cb) {
     const filetypes = /jpeg|jpg|png|gif/;
     const mimetype = filetypes.test(file.mimetype);
-    const extname = filetypes.test(path.extname(file.originalname).toLowerCase());
+    const extname = filetypes.test(file.originalname.toLowerCase().split('.').pop());
     
     if (mimetype && extname) {
       return cb(null, true);
     }
     cb(new Error('Only image files are allowed!'));
+  },
+  limits: {
+    fileSize: 5 * 1024 * 1024 // 5MB limit
   }
 });
 
@@ -88,10 +90,9 @@ router.post('/addPG', upload.array('images[]'), async (req, res) => {
     // Handle uploaded images
     const uploadedImages = [];
     if (req.files && req.files.length > 0) {
-      const baseUrl = `${req.protocol}://${req.get('host')}/`;
-      
       for (const file of req.files) {
-        const imageUrl = baseUrl + file.path;
+        // Cloudinary URL is available in file.path
+        const imageUrl = file.path;
         uploadedImages.push(imageUrl);
         
         // Insert image path into database
@@ -135,21 +136,21 @@ router.post('/addPG', upload.array('images[]'), async (req, res) => {
     // Insert Other Charges
     const charges = data.other_charges;
     if (charges) {
-        const chargeColumns = Object.keys(charges);
-        const chargeValues = chargeColumns.map(key => {
-          // Convert empty strings to NULL for numeric fields
-          if (charges[key] === '' && ['electricity', 'laundry', 'food', 'deposit_amount', 'notice_period'].includes(key)) {
-            return 0;
-          }
-          return charges[key];
-        });
+      const chargeColumns = Object.keys(charges);
+      const chargeValues = chargeColumns.map(key => {
+        // Convert empty strings to NULL for numeric fields
+        if (charges[key] === '' && ['electricity', 'laundry', 'food', 'deposit_amount', 'notice_period'].includes(key)) {
+          return 0;
+        }
+        return charges[key];
+      });
         
-        const chargeQuery = `
-          INSERT INTO other_charges (pg_id, ${chargeColumns.join(', ')})
-          VALUES (?, ${chargeColumns.map(() => '?').join(', ')})
-        `;
-        await connection.query(chargeQuery, [pgId, ...chargeValues]);
-      }
+      const chargeQuery = `
+        INSERT INTO other_charges (pg_id, ${chargeColumns.join(', ')})
+        VALUES (?, ${chargeColumns.map(() => '?').join(', ')})
+      `;
+      await connection.query(chargeQuery, [pgId, ...chargeValues]);
+    }
     
     // Commit transaction
     await connection.commit();

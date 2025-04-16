@@ -1,31 +1,49 @@
 // routes/updatePG.js
+require('dotenv').config();
 const express = require('express');
 const router = express.Router();
 const pool = require('../db');
 const multer = require('multer');
-const fs = require('fs');
-const path = require('path');
+const cloudinary = require('cloudinary').v2;
+const { CloudinaryStorage } = require('multer-storage-cloudinary');
 
-// Set up multer for file uploads
-const uploadDir = 'uploads/pgImages/';
+// Configure Cloudinary
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET
+});
 
-// Create upload directory if it doesn't exist
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir, { recursive: true });
-}
-
-// Configure storage
-const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    cb(null, uploadDir);
-  },
-  filename: function (req, file, cb) {
-    cb(null, Date.now() + '_' + file.originalname);
+// Configure CloudinaryStorage for PG images
+const storage = new CloudinaryStorage({
+  cloudinary: cloudinary,
+  params: {
+    folder: 'findmypg/pgImages',
+    allowed_formats: ['jpg', 'jpeg', 'png', 'gif'],
+    transformation: [{ width: 1000, crop: 'limit' }] // Optimize images
   }
 });
 
 // Handle files with array field name notation
-const upload = multer({ storage: storage });
+const upload = multer({ 
+  storage: storage,
+  limits: {
+    fileSize: 5 * 1024 * 1024 // 5MB limit
+  }
+});
+
+// Helper function to extract public_id from Cloudinary URL
+function getPublicIdFromUrl(url) {
+  try {
+    // Example URL: https://res.cloudinary.com/cloud_name/image/upload/v1234567890/findmypg/pgImages/abcdef
+    const regex = /\/v\d+\/(.+?)(?:\.[^.]+)?$/;
+    const match = url.match(regex);
+    return match ? match[1] : null;
+  } catch (error) {
+    console.error("Error extracting public_id:", error);
+    return null;
+  }
+}
 
 // Helper function to format date for MySQL
 function formatDateForMySQL(dateString) {
@@ -61,14 +79,14 @@ router.post('/updatePG', upload.array('PgImages[]'), async (req, res) => {
       });
     }
 
-    const baseUrl = `${req.protocol}://${req.get('host')}/`;
     const uploadedImages = [];
     const results = { status: "success" };
 
     // Handle file uploads if any
     if (req.files && req.files.length > 0) {
       for (const file of req.files) {
-        const imgUrl = baseUrl + file.path;
+        // Cloudinary URL is available in file.path
+        const imgUrl = file.path;
         uploadedImages.push(imgUrl);
         
         // Insert image into database
@@ -88,17 +106,24 @@ router.post('/updatePG', upload.array('PgImages[]'), async (req, res) => {
 
         if (rmImages && rmImages.length > 0) {
           for (const imageUrl of rmImages) {
-            // Remove from database
+            // Remove from database first
             await pool.query(
               'DELETE FROM images WHERE image_path = ?',
               [imageUrl]
             );
 
-            // Remove file from system
-            const filePath = imageUrl.replace(baseUrl, '');
-            if (fs.existsSync(filePath)) {
-              fs.unlinkSync(filePath);
-              deletedImages.push(filePath);
+            // Delete from Cloudinary
+            const publicId = getPublicIdFromUrl(imageUrl);
+            if (publicId) {
+              try {
+                const result = await cloudinary.uploader.destroy(publicId);
+                if (result.result === 'ok') {
+                  deletedImages.push(imageUrl);
+                }
+              } catch (cloudinaryError) {
+                console.error("Cloudinary delete error:", cloudinaryError);
+                // Continue execution even if Cloudinary delete fails
+              }
             }
           }
           results.deleted = deletedImages;

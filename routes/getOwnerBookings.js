@@ -6,7 +6,8 @@ const pool = require('../db');
 router.get('/get_owner_bookRoom', async (req, res) => {
   try {
     // Get owner_id from header
-    const ownerId = req.headers['Owner-id'];
+    const ownerId = req.headers.owner_id;
+    console.log(req.headers)
 
     if (!ownerId) {
       return res.status(400).json({

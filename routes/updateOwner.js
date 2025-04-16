@@ -1,26 +1,26 @@
+require('dotenv').config();
 // routes/updateOwner.js
 const express = require('express');
 const router = express.Router();
 const pool = require('../db');
 const multer = require('multer');
-const path = require('path');
-const fs = require('fs');
+const cloudinary = require('cloudinary').v2;
+const { CloudinaryStorage } = require('multer-storage-cloudinary');
 
-// Configure multer for file upload
-const uploadDir = 'uploads/owners/';
+// Configure Cloudinary
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET
+});
 
-// Ensure upload directory exists
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir, { recursive: true });
-}
-
-// Configure storage
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, uploadDir);
-  },
-  filename: (req, file, cb) => {
-    cb(null, Date.now() + '_' + file.originalname);
+// Configure CloudinaryStorage
+const storage = new CloudinaryStorage({
+  cloudinary: cloudinary,
+  params: {
+    folder: 'findmypg/owners',
+    allowed_formats: ['jpg', 'jpeg', 'png', 'gif'],
+    transformation: [{ width: 500, height: 500, crop: 'limit' }]
   }
 });
 
@@ -33,7 +33,7 @@ const fileFilter = (req, file, cb) => {
   cb(null, true);
 };
 
-// Configure upload
+// Configure upload with Cloudinary storage
 const upload = multer({ 
   storage: storage,
   fileFilter: fileFilter,
@@ -82,11 +82,9 @@ router.post('/updateOwner', upload.single('avatar'), async (req, res) => {
                          : aadhar_card;
     
     // Update image if uploaded
-    let imageUrl = null;
     if (req.file) {
-      // Create URL for the uploaded file
-      const baseUrl = req.protocol + '://' + req.get('host');
-      imageUrl = baseUrl + '/' + req.file.path;
+      // Cloudinary already uploaded the file, we just need to save the URL
+      const imageUrl = req.file.path;
       
       // Update image in database
       await connection.query(

@@ -1,26 +1,26 @@
 // routes/updateUser.js
+require('dotenv').config();
 const express = require('express');
 const router = express.Router();
 const pool = require('../db');
 const multer = require('multer');
-const path = require('path');
-const fs = require('fs');
+const cloudinary = require('cloudinary').v2;
+const { CloudinaryStorage } = require('multer-storage-cloudinary');
 
-// Configure multer for file upload
-const uploadDir = 'uploads/users/';
+// Cloudinary configuration
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET
+});
 
-// Ensure upload directory exists
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir, { recursive: true });
-}
-
-// Configure storage
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, uploadDir);
-  },
-  filename: (req, file, cb) => {
-    cb(null, Date.now() + '_' + file.originalname);
+// Configure Cloudinary storage for multer
+const storage = new CloudinaryStorage({
+  cloudinary: cloudinary,
+  params: {
+    folder: 'findmypg/users',
+    allowed_formats: ['jpg', 'jpeg', 'png', 'gif'],
+    transformation: [{ width: 500, height: 500, crop: 'limit' }] // Optional: resize images
   }
 });
 
@@ -66,12 +66,8 @@ router.post('/updateUser', upload.single('avatar'), async (req, res) => {
     
     // Handle avatar if uploaded
     if (req.file) {
-      // Create URL for the uploaded file (adjust based on your server setup)
-      const baseUrl = req.protocol + '://' + req.get('host');
-      const profileImageUrl = baseUrl + '/' + req.file.path;
-      
-      // Add to update data
-      updateData.profile_image = profileImageUrl;
+      // With Cloudinary, the secure_url is available in req.file
+      updateData.profile_image = req.file.path;
     }
     
     // Create placeholders for query
