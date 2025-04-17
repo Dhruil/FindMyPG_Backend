@@ -91,7 +91,7 @@ router.post('/deletePG', async (req, res) => {
       await pool.query('DELETE FROM saved_pgs WHERE pg_id = ?', [pgId]);
 
       // Delete from room_facilities
-      await pool.query('DELETE  FROM room_facilities rf JOIN room r ON rf.room_id = r.room_id WHERE r.pg_id = ?', [pgId]);
+      await pool.query('DELETE rf FROM room_facilities rf JOIN room r ON rf.room_id = r.room_id WHERE r.pg_id = ?', [pgId]);
 
       // Delete rooms
       await pool.query('DELETE FROM room WHERE pg_id = ?', [pgId]);
